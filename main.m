@@ -264,3 +264,36 @@ fprintf('Distribuição Escolhida : Rayleigh\n');
 fprintf('Potência Média Teórica : 1.0000\n');
 fprintf('Potência Média Simulada: %.4f\n', mean(potencia_empirica));
 fprintf('===================================================\n\n');
+
+
+% =========================================================================
+% ITEM 6: Calculo da Potencia
+% =========================================================================
+
+% Geração da matriz de desvanencimento:
+h_fading_matriz = gera_fast_fading(7, N_UE);
+
+P_rx_linear = calcula_potencia_rx(P_tx_dBm, PL_BS_UE_dB, sh_BS_UE_dB, h_fading_matriz);
+
+% =========================================================================
+% ITEM 7: Cálculo da SINR
+% =========================================================================
+
+% Cálculo do Ruído:
+N0_linear = 10^((N0_dBm_Hz + NF_dB) / 10); 
+P_ruido = N0_linear * B_Hz;
+
+[SINR_lin, SINR_dB_vetor] = calcula_sinr(P_rx_linear, P_ruido, N_I);
+
+% PRINT
+fprintf('ITEM 7: Cálculo da SINR\n');
+fprintf('SINR média: %.2f dB\n', mean(SINR_dB_vetor));
+
+% =========================================================================
+% ITEM 8: Cálculo da taxa de transmiss˜ao
+% =========================================================================
+Taxa_Mbps_vetor = calcula_taxa(SINR_lin, B_Hz);
+
+% PRINT
+fprintf('ITEM 8: Cálculo da da taxa de transmiss˜ao\n');
+fprintf('Taxa média: %.2f Mbps\n', mean(Taxa_Mbps_vetor));
