@@ -2,7 +2,7 @@
 % APII - Simulação de Comunicações Móveis I
 % Equipe 03 | Matrícula Responsável: 603573
 % MATHEUS MARCELO COSTA DE SOUZA | DIOGO DE OLIVEIRA SOARES 
-% ERIK RAY BARBOSA FALCÃO | ÍCARO RAY BARBOSA FALCÃO
+% ERIK RAY BARBOSA FALCÃO | ICARO RYAN BARBOSA FALCÃO
 % =========================================================================
 
 % Limpeza do ambiente
@@ -372,3 +372,172 @@ Taxa_Mbps_vetor = calcula_taxa(SINR_lin, B_Hz);
 % PRINT
 fprintf('ITEM 8: Cálculo da da taxa de transmiss˜ao\n');
 fprintf('Taxa média: %.2f Mbps\n', mean(Taxa_Mbps_vetor));
+
+
+% =========================================================================
+% ITEM 9: Simulação em Larga Escala (Monte Carlo)
+% =========================================================================
+% Repete-se o cenário (Itens 2 a 8) para um número muito maior de
+% realizações de usuários e de canal, de forma a obter estatísticas
+% (CDFs) confiáveis para a SINR e para a taxa de transmissão.
+
+N_MC = 20000; % Número de "drops" de usuários simulados (Monte Carlo)
+
+% -------------------------------------------------------------------------
+% 1. Geração vetorizada de N_MC usuários uniformes na célula central (BS0)
+% -------------------------------------------------------------------------
+% A área do hexágono corresponde a aproximadamente 90,7% da área do
+% quadrado que o circunscreve. Geramos candidatos em lotes (em vez de um
+% a um) para acelerar a rejeição, mantendo o mesmo método usado no Item 1.
+MC_UE_x = zeros(1, N_MC);
+MC_UE_y = zeros(1, N_MC);
+
+cont_mc = 0;
+while cont_mc < N_MC
+    n_falta = N_MC - cont_mc;
+    n_lote  = ceil(n_falta / 0.85); % margem de segurança sobre a razão de área
+
+    px = (rand(1, n_lote) - 0.5) * 2 * R;
+    py = (rand(1, n_lote) - 0.5) * 2 * R;
+
+    dentro = inpolygon(px, py, hex_base_x, hex_base_y);
+    px = px(dentro);
+    py = py(dentro);
+
+    n_aceitos = min(length(px), n_falta);
+    MC_UE_x(cont_mc + 1 : cont_mc + n_aceitos) = px(1:n_aceitos);
+    MC_UE_y(cont_mc + 1 : cont_mc + n_aceitos) = py(1:n_aceitos);
+    cont_mc = cont_mc + n_aceitos;
+end
+
+% -------------------------------------------------------------------------
+% 2. Perda de percurso para os N_MC usuários, contra as 7 BSs
+% -------------------------------------------------------------------------
+dist_MC_km = zeros(7, N_MC);
+PL_MC_dB   = zeros(7, N_MC);
+
+for b = 1:7
+    dist_MC_km(b, :) = sqrt((MC_UE_x - BS_x(b)).^2 + (MC_UE_y - BS_y(b)).^2);
+    PL_MC_dB(b, :)   = calcula_path_loss(dist_MC_km(b, :), d_0_km, PL_0_dB, n_PL);
+end
+
+% -------------------------------------------------------------------------
+% 3. Sombreamento e desvanecimento rápido i.i.d. para cada realização
+% -------------------------------------------------------------------------
+sh_MC_dB    = gera_sombreamento(sigma_sh_dB, 7, N_MC);
+h_MC_fading = gera_fast_fading(7, N_MC);
+
+% -------------------------------------------------------------------------
+% 4. Potência recebida, SINR e taxa de transmissão para os N_MC usuários
+% -------------------------------------------------------------------------
+P_rx_MC_linear = calcula_potencia_rx(P_tx_dBm, PL_MC_dB, sh_MC_dB, h_MC_fading);
+[SINR_MC_lin, SINR_MC_dB] = calcula_sinr(P_rx_MC_linear, P_ruido, N_I);
+Taxa_MC_Mbps = calcula_taxa(SINR_MC_lin, B_Hz);
+
+fprintf('\n===================================================\n');
+fprintf('ITEM 9: SIMULAÇÃO EM LARGA ESCALA (MONTE CARLO)\n');
+fprintf('===================================================\n');
+fprintf('Realizações simuladas (N_MC): %d usuários\n', N_MC);
+fprintf('SINR média simulada  : %.2f dB\n', mean(SINR_MC_dB));
+fprintf('Taxa média simulada  : %.2f Mbps\n', mean(Taxa_MC_Mbps));
+fprintf('===================================================\n\n');
+
+
+% =========================================================================
+% ITEM 10: Geração das CDFs
+% =========================================================================
+% CDF empírica da SINR (dB) e da taxa de transmissão (Mbps), obtidas a
+% partir de todos os N_MC usuários simulados no Item 9.
+
+[x_SINR_cdf, F_SINR_cdf] = calcula_cdf_empirica(SINR_MC_dB);
+[x_Taxa_cdf, F_Taxa_cdf] = calcula_cdf_empirica(Taxa_MC_Mbps);
+
+figure;
+
+subplot(1, 2, 1); hold on; grid on;
+plot(x_SINR_cdf, F_SINR_cdf, 'LineWidth', 2, 'Color', [0 0.447 0.741]);
+xlabel('SINR (dB)');
+ylabel('CDF F(x)');
+title('CDF Empírica da SINR');
+
+subplot(1, 2, 2); hold on; grid on;
+plot(x_Taxa_cdf, F_Taxa_cdf, 'LineWidth', 2, 'Color', [0.85 0.325 0.098]);
+xlabel('Taxa de Transmissão (Mbps)');
+ylabel('CDF F(x)');
+title('CDF Empírica da Taxa de Transmissão');
+
+sgtitle(sprintf('Item 10: CDFs Empíricas (N_{MC} = %d usuários)', N_MC));
+
+fprintf('ITEM 10: GERAÇÃO DAS CDFs CONCLUÍDA\n');
+fprintf('P(SINR <= 0 dB)         : %.2f%%\n', 100 * mean(SINR_MC_dB <= 0));
+fprintf('Taxa mediana (50%%)      : %.2f Mbps\n', median(Taxa_MC_Mbps));
+fprintf('===================================================\n\n');
+
+
+% =========================================================================
+% ITEM 11: Análise de Sensibilidade
+% =========================================================================
+% Repetimos a simulação de larga escala variando dois parâmetros do
+% sistema (sigma_sh e N_I), mantendo os demais fixos e reaproveitando as
+% mesmas posições de usuários (MC_UE_x, MC_UE_y) e, portanto, o mesmo
+% Path Loss (PL_MC_dB) do Item 9. Isso isola o efeito de cada parâmetro
+% sobre as CDFs, sem misturar variações de geometria.
+
+% -------------------------------------------------------------------------
+% Análise 1: Variação do desvio padrão do sombreamento (sigma_sh)
+% -------------------------------------------------------------------------
+vetor_sigma_sh = [4, 8, 12]; % dB (baixo, nominal da equipe, alto)
+cores_sigma = {[0 0.447 0.741], [0.85 0.325 0.098], [0.466 0.674 0.188]};
+
+figure; hold on; grid on;
+for k = 1:length(vetor_sigma_sh)
+    sigma_atual = vetor_sigma_sh(k);
+
+    sh_temp  = gera_sombreamento(sigma_atual, 7, N_MC);
+    h_temp   = gera_fast_fading(7, N_MC);
+    Prx_temp = calcula_potencia_rx(P_tx_dBm, PL_MC_dB, sh_temp, h_temp);
+    [~, SINR_temp_dB] = calcula_sinr(Prx_temp, P_ruido, N_I);
+
+    [x_temp, F_temp] = calcula_cdf_empirica(SINR_temp_dB);
+    plot(x_temp, F_temp, 'LineWidth', 2, 'Color', cores_sigma{k}, ...
+        'DisplayName', sprintf('\\sigma_{sh} = %d dB', sigma_atual));
+end
+xlabel('SINR (dB)');
+ylabel('CDF F(x)');
+title('Item 11: Sensibilidade da CDF de SINR ao Sombreamento (\sigma_{sh})');
+legend('Location', 'southeast');
+hold off;
+
+% -------------------------------------------------------------------------
+% Análise 2: Variação do número de interferentes ativos (N_I)
+% -------------------------------------------------------------------------
+% Aqui reaproveitamos diretamente P_rx_MC_linear (Item 9), pois apenas a
+% forma de somar a interferência muda, não a potência recebida em si.
+vetor_N_I = [1, 2, 4, 6];
+cores_NI = {[0 0.447 0.741], [0.85 0.325 0.098], [0.466 0.674 0.188], [0.494 0.184 0.556]};
+
+figure; hold on; grid on;
+for k = 1:length(vetor_N_I)
+    NI_atual = vetor_N_I(k);
+
+    [~, SINR_temp_dB] = calcula_sinr(P_rx_MC_linear, P_ruido, NI_atual);
+    [x_temp, F_temp] = calcula_cdf_empirica(SINR_temp_dB);
+
+    plot(x_temp, F_temp, 'LineWidth', 2, 'Color', cores_NI{k}, ...
+        'DisplayName', sprintf('N_I = %d', NI_atual));
+end
+xlabel('SINR (dB)');
+ylabel('CDF F(x)');
+title('Item 11: Sensibilidade da CDF de SINR ao Número de Interferentes (N_I)');
+legend('Location', 'southeast');
+hold off;
+
+fprintf('ITEM 11: ANÁLISE DE SENSIBILIDADE CONCLUÍDA\n');
+fprintf('Parâmetros variados: sigma_sh (sombreamento) e N_I (interferentes)\n');
+fprintf('Tendência esperada 1: sigma_sh maior -> CDF mais espalhada (maior\n');
+fprintf('  variância da SINR), com cauda inferior mais pesada (mais usuários\n');
+fprintf('  em outage), embora a média em dB pouco se altere.\n');
+fprintf('Tendência esperada 2: N_I maior -> mais potência interferente somada\n');
+fprintf('  -> CDF da SINR desloca-se para a esquerda (piora), reduzindo a\n');
+fprintf('  taxa de transmissão de forma sistemática.\n');
+fprintf('===================================================\n\n');
