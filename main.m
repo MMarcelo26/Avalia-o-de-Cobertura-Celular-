@@ -267,6 +267,81 @@ fprintf('===================================================\n\n');
 
 
 % =========================================================================
+% ITEM 5: Ilustracao das Componentes do Canal
+% =========================================================================
+
+% 1. Configuração do Percurso Linear (Vetor de Distância)
+% Gerando um percurso de 1 a 1000 metros (passos de 1m) para a simulação do canal
+d = 1:1:1000; 
+N_amostras = length(d);
+
+% -------------------------------------------------------------------------
+% Componente 1: Perda de Percurso (Path Loss - Tendência Média)
+% -------------------------------------------------------------------------
+% Aplicação da Eq. (1)
+PL = PL_0_dB + 10 * n_PL * log10(d / d_0_m);
+P_rx_avg = P_tx_dBm - PL; % Potência média recebida (apenas perda de percurso)
+
+% -------------------------------------------------------------------------
+% Componente 2: Sombreamento Log-Normal (Variação Lenta Correlacionada)
+% -------------------------------------------------------------------------
+% Para que seja visualmente identificável como uma variação "lenta",
+% aplica-se o Modelo de Correlação Espacial de Gudmundson.
+delta_d = 1;      % Espaçamento entre as amostras (1 metro)
+d_cor = 50;       % Distância de correlação típica urbana (50 metros)
+rho = exp(-delta_d / d_cor); % Fator de correlação entre amostras adjacentes
+
+% Inicialização do vetor de sombreamento
+X_sigma = zeros(1, N_amostras);
+
+% Amostra inicial gerada a partir da distribuição normal com desvio da main (sigma_sh_dB)
+X_sigma(1) = sigma_sh_dB * randn(); 
+
+% Processo autoregressivo de primeira ordem (AR-1) para impor a correlação espacial
+for k = 2:N_amostras
+    X_sigma(k) = rho * X_sigma(k-1) + sqrt(1 - rho^2) * sigma_sh_dB * randn();
+end
+
+% Potência de larga escala (Atenuação Média + Obstáculos)
+P_rx_large_scale = P_rx_avg - X_sigma; 
+
+% -------------------------------------------------------------------------
+% Componente 3: Desvanecimento Rápido (Fast Fading Rayleigh - Pequena Escala)
+% -------------------------------------------------------------------------
+% Gerando componentes em fase (I) e quadratura (Q) independentes, Eq. (4)
+h_I = randn(1, N_amostras) / sqrt(2);
+h_Q = randn(1, N_amostras) / sqrt(2);
+h_mag = sqrt(h_I.^2 + h_Q.^2); % Envelope Rayleigh
+h_power = h_mag.^2;            % Ganho de potência instantânea (Exponencial)
+
+% Potência Total Recebida (Combinando as 3 camadas do canal), Eq. (5)
+P_rx_total = P_rx_large_scale + 10 * log10(h_power);
+
+% -------------------------------------------------------------------------
+% Geração do Gráfico Qualitativo (Figure 1)
+% -------------------------------------------------------------------------
+figure(1);
+plot(d, P_rx_total, 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8); hold on;
+plot(d, P_rx_large_scale, 'b', 'LineWidth', 1.8);
+plot(d, P_rx_avg, 'r', 'LineWidth', 2.2);
+hold off;
+
+% Formatação e Identificação Visual Exigida no PDF
+grid on;
+title(sprintf('Ilustração Qualitativa das Componentes do Canal (Matrícula Final 3: n = %.1f, \\sigma_{sh} = %d dB)', n_PL, sigma_sh_dB));
+xlabel('Distância entre Transmissor e Receptor (m)');
+ylabel('Potência Recebida (dBm)');
+legend('Sinal Total (Path Loss + Sombreamento + Desvanecimento Rápido)', ...
+       'Larga Escala (Path Loss + Sombreamento)', ...
+       'Tendência Média (Apenas Path Loss)', ...
+       'Location', 'southwest');
+
+% Ajuste de limites para melhor visualização
+xlim([0 1000]);
+ylim([min(P_rx_total)-5, max(P_rx_total)+5]);
+
+
+% =========================================================================
 % ITEM 6: Calculo da Potencia
 % =========================================================================
 
