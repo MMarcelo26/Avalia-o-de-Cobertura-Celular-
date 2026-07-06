@@ -320,7 +320,7 @@ P_rx_total = P_rx_large_scale + 10 * log10(h_power);
 % -------------------------------------------------------------------------
 % Geração do Gráfico Qualitativo (Figure 1)
 % -------------------------------------------------------------------------
-figure(1);
+figure;
 plot(d, P_rx_total, 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8); hold on;
 plot(d, P_rx_large_scale, 'b', 'LineWidth', 1.8);
 plot(d, P_rx_avg, 'r', 'LineWidth', 2.2);
