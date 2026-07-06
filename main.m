@@ -541,3 +541,138 @@ fprintf('Tendência esperada 2: N_I maior -> mais potência interferente somada\
 fprintf('  -> CDF da SINR desloca-se para a esquerda (piora), reduzindo a\n');
 fprintf('  taxa de transmissão de forma sistemática.\n');
 fprintf('===================================================\n\n');
+
+
+% =========================================================================
+% ITEM 12 (QUESTÃO DESAFIO): Controle de Potência Fracionário
+% =========================================================================
+% Refaz a simulação completa de larga escala (Item 9) introduzindo um
+% esquema de controle de potência fracionário (FPC), no qual a potência
+% de transmissão de cada enlace compensa PARCIALMENTE a perda de percurso
+% (ver calcula_controle_potencia.m). Reaproveitamos EXATAMENTE as mesmas
+% posições de usuários (MC_UE_x, MC_UE_y), o mesmo Path Loss (PL_MC_dB) e
+% as mesmas realizações de sombreamento (sh_MC_dB) e desvanecimento
+% rápido (h_MC_fading) do Item 9, de forma a isolar unicamente o efeito
+% do controle de potência (comparação "com" vs "sem" pareada/justa).
+
+% -------------------------------------------------------------------------
+% 1. Parâmetros do controle de potência fracionário
+% -------------------------------------------------------------------------
+P_max_dBm = P_tx_dBm;      % Potência máxima de transmissão (40 dBm, igual ao cenário original)
+P_min_dBm = P_max_dBm - 20; % Potência mínima de transmissão (assumida: 20 dB de faixa dinâmica)
+alpha_PC  = 0.6;            % Fator de compensação fracionário (0 = sem controle, 1 = compensação total)
+
+% Perdas de percurso de referência que definem a faixa de normalização:
+% PL_min_ref -> perda de percurso bem próximo da BS (distância d0)
+% PL_max_ref -> perda de percurso na borda da célula (distância R)
+PL_min_ref_dB = calcula_path_loss(d_0_km, d_0_km, PL_0_dB, n_PL);
+PL_max_ref_dB = calcula_path_loss(R,      d_0_km, PL_0_dB, n_PL);
+
+% -------------------------------------------------------------------------
+% 2. Potência de transmissão controlada para cada enlace (7 BSs x N_MC)
+% -------------------------------------------------------------------------
+P_tx_PC_dB_MC = calcula_controle_potencia(PL_MC_dB, alpha_PC, P_max_dBm, P_min_dBm, ...
+                                           PL_min_ref_dB, PL_max_ref_dB);
+
+% -------------------------------------------------------------------------
+% 3. Potência recebida, SINR e taxa de transmissão -- CENÁRIO COM CONTROLE
+% -------------------------------------------------------------------------
+P_rx_PC_MC_linear = calcula_potencia_rx(P_tx_PC_dB_MC, PL_MC_dB, sh_MC_dB, h_MC_fading);
+[SINR_PC_MC_lin, SINR_PC_MC_dB] = calcula_sinr(P_rx_PC_MC_linear, P_ruido, N_I);
+Taxa_PC_MC_Mbps = calcula_taxa(SINR_PC_MC_lin, B_Hz);
+
+% -------------------------------------------------------------------------
+% 4. CDFs empíricas: SEM controle (Item 9/10) vs. COM controle
+% -------------------------------------------------------------------------
+[x_SINR_PC_cdf, F_SINR_PC_cdf] = calcula_cdf_empirica(SINR_PC_MC_dB);
+[x_Taxa_PC_cdf, F_Taxa_PC_cdf] = calcula_cdf_empirica(Taxa_PC_MC_Mbps);
+
+figure;
+
+subplot(1, 2, 1); hold on; grid on;
+plot(x_SINR_cdf,    F_SINR_cdf,    'LineWidth', 2, 'Color', [0.6 0.6 0.6], 'DisplayName', 'Sem controle de potência');
+plot(x_SINR_PC_cdf, F_SINR_PC_cdf, 'LineWidth', 2, 'Color', [0.85 0.325 0.098], 'DisplayName', sprintf('Com controle (\\alpha = %.1f)', alpha_PC));
+xlabel('SINR (dB)');
+ylabel('CDF F(x)');
+title('CDF da SINR: Com vs. Sem Controle de Potência');
+legend('Location', 'southeast');
+hold off;
+
+subplot(1, 2, 2); hold on; grid on;
+plot(x_Taxa_cdf,    F_Taxa_cdf,    'LineWidth', 2, 'Color', [0.6 0.6 0.6], 'DisplayName', 'Sem controle de potência');
+plot(x_Taxa_PC_cdf, F_Taxa_PC_cdf, 'LineWidth', 2, 'Color', [0 0.447 0.741], 'DisplayName', sprintf('Com controle (\\alpha = %.1f)', alpha_PC));
+xlabel('Taxa de Transmissão (Mbps)');
+ylabel('CDF F(x)');
+title('CDF da Taxa: Com vs. Sem Controle de Potência');
+legend('Location', 'southeast');
+hold off;
+
+sgtitle(sprintf('Item 12 (Desafio): Efeito do Controle de Potência Fracionário (\\alpha = %.1f, N_{MC} = %d)', alpha_PC, N_MC));
+
+% -------------------------------------------------------------------------
+% 5. Gráfico de apoio: potência de transmissão aplicada vs. distância
+%    (evidencia visualmente a lógica do controle fracionário: usuários
+%    próximos da BS transmitem menos, usuários de borda seguem em P_max)
+% -------------------------------------------------------------------------
+figure; hold on; grid on;
+scatter(dist_MC_km(1, :), P_tx_PC_dB_MC(1, :), 6, [0.2 0.4 0.8], 'filled', 'MarkerFaceAlpha', 0.25);
+yline(P_max_dBm, '--', 'Color', [0.6 0.6 0.6], 'LineWidth', 1.5, 'DisplayName', 'P_{max} (sem controle)');
+xlabel('Distância à BS servidora (km)');
+ylabel('Potência de Transmissão P_{tx} (dBm)');
+title(sprintf('Item 12 (Desafio): Potência Aplicada pelo Controle Fracionário (\\alpha = %.1f)', alpha_PC));
+legend('Enlaces BS0 \rightarrow Usuários simulados', 'Location', 'southeast');
+hold off;
+
+% -------------------------------------------------------------------------
+% 6. Métricas quantitativas para responder às 3 perguntas do desafio
+% -------------------------------------------------------------------------
+% Usuários de "borda de célula": definidos aqui como os 10% mais distantes
+% da própria BS servidora (BS0), i.e. distância >= percentil 90 dentre os
+% usuários simulados no Item 9.
+limiar_borda_km = prctile(dist_MC_km(1, :), 90);
+mask_borda = dist_MC_km(1, :) >= limiar_borda_km;
+
+SINR_media_sem  = mean(SINR_MC_dB);
+SINR_media_com  = mean(SINR_PC_MC_dB);
+SINR_borda_sem  = mean(SINR_MC_dB(mask_borda));
+SINR_borda_com  = mean(SINR_PC_MC_dB(mask_borda));
+
+% Nível de interferência percebido pelos demais usuários (soma da potência
+% das N_I interferentes mais fortes, em escala linear -> média em dBm)
+Interf_sem_linear = sum(P_rx_MC_linear(2:(N_I + 1), :), 1);
+Interf_com_linear = sum(P_rx_PC_MC_linear(2:(N_I + 1), :), 1);
+Interf_media_sem_dBm = 10 * log10(mean(Interf_sem_linear));
+Interf_media_com_dBm = 10 * log10(mean(Interf_com_linear));
+
+% Índice de justiça de Jain (Jain's Fairness Index) sobre a taxa de cada usuário
+jain_index = @(x) (sum(x)).^2 / (numel(x) * sum(x.^2));
+Jain_sem = jain_index(Taxa_MC_Mbps);
+Jain_com = jain_index(Taxa_PC_MC_Mbps);
+
+% Capacidade agregada do sistema (soma das taxas de todos os usuários
+% simulados) - usada aqui como proxy comparativo de capacidade total
+Cap_agregada_sem = sum(Taxa_MC_Mbps);
+Cap_agregada_com = sum(Taxa_PC_MC_Mbps);
+
+fprintf('\n===================================================\n');
+fprintf('ITEM 12 (QUESTÃO DESAFIO): CONTROLE DE POTÊNCIA FRACIONÁRIO\n');
+fprintf('===================================================\n');
+fprintf('Parâmetros: alpha_PC = %.2f | P_max = %d dBm | P_min = %d dBm\n', alpha_PC, P_max_dBm, P_min_dBm);
+fprintf('Usuários de borda considerados: %.0f%% mais distantes (d >= %.3f km)\n\n', 10, limiar_borda_km);
+
+fprintf('--- (1) SINR média vs. SINR de borda ---\n');
+fprintf('SINR média geral   : sem controle = %.2f dB | com controle = %.2f dB | Delta = %+.2f dB\n', ...
+        SINR_media_sem, SINR_media_com, SINR_media_com - SINR_media_sem);
+fprintf('SINR média (borda) : sem controle = %.2f dB | com controle = %.2f dB | Delta = %+.2f dB\n\n', ...
+        SINR_borda_sem, SINR_borda_com, SINR_borda_com - SINR_borda_sem);
+
+fprintf('--- (2) Nível de interferência percebido pelos demais usuários ---\n');
+fprintf('Interferência média: sem controle = %.2f dBm | com controle = %.2f dBm | Delta = %+.2f dB\n\n', ...
+        Interf_media_sem_dBm, Interf_media_com_dBm, Interf_media_com_dBm - Interf_media_sem_dBm);
+
+fprintf('--- (3) Trade-off entre justiça (fairness) e capacidade agregada ---\n');
+fprintf('Índice de Jain (taxa): sem controle = %.4f | com controle = %.4f | Delta = %+.4f\n', ...
+        Jain_sem, Jain_com, Jain_com - Jain_sem);
+fprintf('Capacidade agregada  : sem controle = %.1f Mbps | com controle = %.1f Mbps | Delta = %+.2f%%\n', ...
+        Cap_agregada_sem, Cap_agregada_com, 100 * (Cap_agregada_com - Cap_agregada_sem) / Cap_agregada_sem);
+fprintf('===================================================\n\n');
